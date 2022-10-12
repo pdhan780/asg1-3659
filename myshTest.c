@@ -3,15 +3,16 @@
 
 #define MAX_LINE 80
 
-int read_CL(char *passArg[]);
+char** read_CL(char *passArg[]);
 int strngcmp(char *s1, char *s2);
 
 int main()
 {
   printf("start\n");
   char shell[] = "mysh$ ";
-  char *args[MAX_LINE];
-  int size = read_CL(args);
+  char *args2[MAX_LINE];
+  char *args[MAX_LINE] = read_CL(args2);
+  printf("%s\n", args[0]);
 
   /*
   while(1)
@@ -29,14 +30,48 @@ int main()
 
 
 
-int read_CL(char *passArg[])
+char** read_CL(char *passArg[])
 {
   char exit[] = "exit";
-  int i;
+  char buff[MAX_LINE];
+  char tempArray[MAX_LINE];
+  int i, j;
+  char temp;
 
-  printf("in read cl\n");
 
-  int bytes_read = read(0, passArg, MAX_LINE);
+  int bytes_read = read(0, buff, MAX_LINE);
+  buff[bytes_read] = '\0';
+  i = 0;
+  int h = 0;
+
+  while(i < bytes_read)
+    {
+      temp = buff[i];
+      j = 0;
+      while(temp != ' ' && temp != '\n' && temp != '\0')
+        {
+          tempArray[j] = temp;
+          j++;
+          i++;
+          temp = buff[i];
+        }
+      printf("j equals %d\n", j);
+      tempArray[j] = '\0';
+      j = 0;
+      while(tempArray[j] != '\0')
+        {
+           printf("%c\n", tempArray[j]);
+        j++;
+        }
+      passArg[h] = &tempArray[0];
+      h++;
+      printf("%s\n", passArg[0]);
+
+      i++;
+    }
+
+
+
   if(bytes_read == 0)
     {
       printf("enter command\n");
@@ -46,34 +81,16 @@ int read_CL(char *passArg[])
       printf("error");
       /* handle error*/
     }
-  else
+    else
     {
       /* construct array from arguments*/
+      return passArg;
     }
 
 
-  /*
-  if(argc < 2)
-    {
-      printf("Too few arguments\n");
-      return 0;
-    }
-  else if(strngcmp(argv[1], exit) == 0)
-    {
-      return 2;
-    }
-  else
-    {
-      while(i < argc)
-        {
-          passArg[i] = argv[i+1];
-          i++;
-        }
 
-    }
-  */
-  
-  return bytes_read;
+
+  return passArg;
 }
 
 
