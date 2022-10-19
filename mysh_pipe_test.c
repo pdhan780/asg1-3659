@@ -36,10 +36,10 @@ int main()
     {
       write(1, shell, 6);
       num_arg = read_CL(args, args2, temp_array);
-      /* printf("%s\n", args[0]); */
+
       if(num_arg != -2)
         {
-         if(strngcmp(args[0], exit_str) == 0)
+          if(strngcmp(args[0], exit_str) == 0)
             {
               run = 0;
             }
@@ -62,6 +62,19 @@ int main()
 }
 
 
+/*
+   Purpose: To create a child process
+   Details: Given tokenized input in pass_arg or both pass_arg and pass_arg2 this function
+   creates a child process and said child executes the command given. Regular commands and
+   background jobs use pass_arg while command pipelines use both pass_arg and pass_arg2.
+   This is because command pipelines require two child processes which entails two
+   strings for two execve calls.
+
+   Return value: 0 upon normal execution and -1 upon any errors.
+
+*/
+
+
 int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
 {
   int pipefd[2];
@@ -70,15 +83,12 @@ int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
   char * const envp[] = { NULL };
 
 
-  printf("in create proc\n");
   pipe(pipefd);
-
-  pid1 = fork();
-  printf("forked \n");
 
   if(back_job(pass_arg, num_arg))
     {
-      /*printf("in background\n");*/
+      pid1 = fork();
+
       pass_arg[num_arg - 1] = NULL;
       if (pid1 == 0)
         {
@@ -87,14 +97,11 @@ int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
         }
       waitpid(pid1, &child_status, WNOHANG);
     }
-  else if(pass_arg2[0] == NULL)
-    {
-      printf("arg2 is null\n");
-    }
   else if(pass_arg2[0] != NULL)
     {
-      printf("in command pipe\n");
-      /* we must tokenize the input into 2 separate arrays(or more depending on how many argumen
+      pid1 = fork();
+      /* we must tokenize the input into 2 separate arrays(or more depending on how many arguments we can
+         pipe)
 
        */
       if (pid1 == 0)
@@ -113,7 +120,8 @@ int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
           dup2(pipefd[READ_END], 0);
           execve(pass_arg2[0], pass_arg2, envp);
         }
-         close(pipefd[READ_END]);
+
+      close(pipefd[READ_END]);
 
       waitpid(pid1, &child_status, 0);
       waitpid(pid2, &child_status, 0);
@@ -123,7 +131,7 @@ int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
   else
     {
       printf("reg proc\n");
-
+      pid1 = fork();
       if (pid1 == 0)
         {
           execve(pass_arg[0], pass_arg, envp);
@@ -135,23 +143,33 @@ int create_proc(char *pass_arg[], char *pass_arg2[], int num_arg)
 
 }
 
+
+/*
+   Purpose: To identify if the '&' is in input
+   Details: Loops through pass_arg and compares element in array to '&'
+   by calling strngcmp()
+
+   Return value: 0 if '&' is NOT in array and 1 otherwise
+
+*/
+
+
+
 int back_job(char *pass_arg[], int num_arg)
 {
   int flag = 0;
   int i;
   char and[] = "&";
 
-  for(i = 0; flag == 0 && i < num_arg; i++)
+  for(i = 0; pass_arg[i] != NULL && flag == 0 && i < num_arg; i++)
     {
       if(strngcmp(pass_arg[i], and) == 0)
         {
           flag = 1;
           return flag;
-          printf("backjob seen\n");
         }
     }
 
-  printf("backjob not seen\n");
   return flag;
 }
 
@@ -162,9 +180,35 @@ int pipe_arg(char *pass_arg2[], char buff[], int num_arg)
 
 
 
-/* modify read so when it encounters a '|' it will parse the first part of the input
-   into one array and the second part into a different array
-   ex: input = ls -al | wc -l; args1[] = "ls -a;" args2[] = "wc -l"
+/*
+   Purpose: Tokenize input
+   Details: Upon a successful read this function will tokenize the input in one of two ways.
+
+   1. No command pipeline or IO redirection: In this case the function will tokenize
+   the input and store everything in the pass_arg array
+
+   2. Command pipeline or IO redirection seen: The function will read the first part
+   of the input until to sees a '|' or '<' or '>' it then stores everythihg into pass_arg
+   and then continues reading until '\n' and then stroes everything after the symbol into
+   pass_arg2.
+
+   The input is read into a char array called "buff" buff is then tokenized into the 2D array
+   "temp_array" and then pass_arg or pass_arg2 is set to point at the first character in each
+   string.
+
+   ex. if input is: /bin/ls -al | /usr/bin/wc -l
+   temp_array[0][7] = /bin/ls
+   pass_arg[0] = /bin/ls
+   temp_array[1][3] = -al
+   pass_arg[1] = -al
+   temp_array[2][11] = /usr/bin/wc
+   pass_arg[2] = /usr/bin/wc
+   temp_array[3][2] = -l
+   pass_arg[3] = -l
+
+   Return value: returns "pointer counter" representing the number of arguments
+   and a successful read. -2 if no commands were entered and -1 upon any read errors
+
 */
 int read_CL(char *pass_arg[], char *pass_arg2[], char temp_array[][MAX_LINE])
 {
@@ -173,21 +217,17 @@ int read_CL(char *pass_arg[], char *pass_arg2[], char temp_array[][MAX_LINE])
   char temp; /*holds the character to be read*/
   char com_pipe[] = "|";
   int flag = 0;
+  int arg2_counter = 0;
   int bytes_read = read(0, buff, MAX_LINE); /*read user input*/
-  printf("bytes read: %d\n", bytes_read);
 
+  /* printf("bytes read: %d\n", bytes_read); */
 
-  for(main_counter = 0; main_counter < bytes_read; main_counter++)
-    {
-      if(buff[main_counter] == '|')
-        {
-          printf("command pipe identified\n");
-        }
-    }
 
   main_counter = 0;
   pointer_counter = 0;
-    /* pointer counter will also tell us how many tokens there are*/
+
+
+  /* pointer counter will also tell us how many tokens there are*/
 
 
   if(bytes_read == 1)
@@ -216,6 +256,11 @@ int read_CL(char *pass_arg[], char *pass_arg2[], char temp_array[][MAX_LINE])
               main_counter++;
               /*printf("main count after flag: %d\n", main_counter); */
               temp = buff[main_counter];
+              if(temp == ' ')
+                {
+                  main_counter++;
+                  temp = buff[main_counter];
+                }
             }
 
           char_counter = 0;
@@ -232,30 +277,17 @@ int read_CL(char *pass_arg[], char *pass_arg2[], char temp_array[][MAX_LINE])
           */
           if(flag == 0)
             {
-              printf("in pass arg1\n");
               temp_array[pointer_counter][char_counter] = '\0';
 
               pass_arg[pointer_counter] = &temp_array[pointer_counter][0];
-              printf("pointer counter: %d\n\n", pointer_counter);
-              printf("%s\n\n", pass_arg[pointer_counter]);
             }
           else
             {
-              printf("in pass arg2\n");
+
               temp_array[pointer_counter][char_counter] = '\0';
 
-              printf("inside temp array: \n");
-              for(int i = 0; i < char_counter; i++)
-                {
-                  printf("%c", temp_array[pointer_counter][i]);
-                }
-              printf("\n");
-
-              pass_arg2[pointer_counter] = &temp_array[pointer_counter][0];
-              printf("temp array at char counter index 0: %c\n\n", temp_array[pointer_counter][0
-              printf("pointer counter: %d\n\n", pointer_counter);
-              printf("inside args2 array: \n");
-              printf("%s\n\n", pass_arg[pointer_counter]);
+              pass_arg2[arg2_counter] = &temp_array[pointer_counter][0];
+              arg2_counter++;
             }
 
           pointer_counter++;
@@ -266,13 +298,8 @@ int read_CL(char *pass_arg[], char *pass_arg2[], char temp_array[][MAX_LINE])
 
     }
 
-  printf("end of read function\n");
 
-  /* flush buffer
-  for(main_counter = 0; main_counter < MAX_LINE; main_counter++)
-    {
-      buff[main_counter] = '\0';
-      }\*/
+
   return pointer_counter;
 }
 
@@ -303,5 +330,3 @@ void flush(char *pass_arg[])
       pass_arg[i] = NULL;
     }
 }
-
-
